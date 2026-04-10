@@ -1,7 +1,7 @@
 /* eslint-env mocha */
 
 import { expect } from 'aegir/chai'
-import { TypedEventEmitter } from '../src/index.js'
+import { TypedEventEmitter } from '../src/index.ts'
 
 describe('main-event', () => {
   it('should be an EventTarget', async () => {

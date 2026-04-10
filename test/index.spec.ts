@@ -32,7 +32,7 @@ describe('main-event', () => {
   })
 
   it('should report event listener count', () => {
-     const target = new TypedEventEmitter<EventTypes>()
+    const target = new TypedEventEmitter<EventTypes>()
 
     expect(target.listenerCount('test')).to.equal(0)
 

@@ -5,6 +5,7 @@ import { TypedEventEmitter } from '../src/index.ts'
 
 interface EventTypes {
   test: CustomEvent<string>
+  other: CustomEvent<string>
 }
 
 describe('main-event', () => {
@@ -148,5 +149,12 @@ describe('main-event', () => {
 
     expect(secondListenerInvoked).to.be.true()
     expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should remove listeners that are not present', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    expect(target.listenerCount('other')).to.equal(0)
+    target.removeEventListener('other')
+    expect(target.listenerCount('other')).to.equal(0)
   })
 })

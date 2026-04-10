@@ -3,6 +3,11 @@
 import { expect } from 'aegir/chai'
 import { TypedEventEmitter } from '../src/index.ts'
 
+interface EventTypes {
+  test: CustomEvent<string>
+  other: CustomEvent<string>
+}
+
 describe('main-event', () => {
   it('should be an EventTarget', async () => {
     const target = new TypedEventEmitter()
@@ -11,10 +16,6 @@ describe('main-event', () => {
   })
 
   it('should type event emitters', async () => {
-    interface EventTypes {
-      test: CustomEvent<string>
-    }
-
     const target = new TypedEventEmitter<EventTypes>()
     const deferred = Promise.withResolvers()
     target.addEventListener('test', (evt) => {
@@ -32,10 +33,6 @@ describe('main-event', () => {
   })
 
   it('should report event listener count', () => {
-    interface EventTypes {
-      test: CustomEvent<string>
-    }
-
     const target = new TypedEventEmitter<EventTypes>()
 
     expect(target.listenerCount('test')).to.equal(0)
@@ -46,10 +43,6 @@ describe('main-event', () => {
   })
 
   it('should reduce event listener count after dispatch', () => {
-    interface EventTypes {
-      test: CustomEvent<string>
-    }
-
     const target = new TypedEventEmitter<EventTypes>()
 
     expect(target.listenerCount('test')).to.equal(0)
@@ -67,11 +60,24 @@ describe('main-event', () => {
     expect(target.listenerCount('test')).to.equal(0)
   })
 
-  it('should reduce event listener count after removal', () => {
-    interface EventTypes {
-      test: CustomEvent<string>
-    }
+  it('should reduce event listener count after dispatch when listener is an object', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    target.addEventListener('test', {
+      handleEvent: (evt) => {}
+    }, {
+      once: true
+    })
 
+    expect(target.listenerCount('test')).to.equal(1)
+
+    target.dispatchEvent(new CustomEvent('test', {
+      detail: 'hello'
+    }))
+
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should reduce event listener count after removal', () => {
     const target = new TypedEventEmitter<EventTypes>()
 
     expect(target.listenerCount('test')).to.equal(0)
@@ -90,10 +96,6 @@ describe('main-event', () => {
   })
 
   it('should allow regular dispatch', () => {
-    interface EventTypes {
-      test: CustomEvent<string>
-    }
-
     const target = new TypedEventEmitter<EventTypes>()
 
     expect(target.listenerCount('test')).to.equal(0)
@@ -111,5 +113,48 @@ describe('main-event', () => {
     target.dispatchEvent(new CustomEvent('derp'))
 
     expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should not remove `once` listener if earlier event propagation was stopped', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let firstListenerInvoked = false
+    let secondListenerInvoked = false
+
+    expect(target.listenerCount('test')).to.equal(0)
+
+    target.addEventListener('test', (evt) => {
+      firstListenerInvoked = true
+      evt.stopImmediatePropagation()
+    }, {
+      once: true
+    })
+
+    target.addEventListener('test', () => {
+      secondListenerInvoked = true
+    }, {
+      once: true
+    })
+
+    target.dispatchEvent(new CustomEvent('test', {
+      detail: 'hello'
+    }))
+
+    expect(firstListenerInvoked).to.be.true()
+    expect(secondListenerInvoked).to.be.false()
+    expect(target.listenerCount('test')).to.equal(1)
+
+    target.dispatchEvent(new CustomEvent('test', {
+      detail: 'world'
+    }))
+
+    expect(secondListenerInvoked).to.be.true()
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should remove listeners that are not present', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    expect(target.listenerCount('other')).to.equal(0)
+    target.removeEventListener('other')
+    expect(target.listenerCount('other')).to.equal(0)
   })
 })

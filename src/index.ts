@@ -88,6 +88,14 @@ export interface TypedEventTarget <EventMap extends Record<string, any>> extends
   safeDispatchEvent<Detail>(type: keyof EventMap, detail?: CustomEventInit<Detail>): boolean
 }
 
+function isEventObject <EventType> (obj?: any): obj is EventObject<EventType> {
+  return typeof obj?.handleEvent === 'function'
+}
+
+function isOnce (options?: boolean | AddEventListenerOptions): boolean {
+  return (options !== true && options !== false && options?.once) ?? false
+}
+
 /**
  * An implementation of a typed event target
  */
@@ -114,7 +122,24 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
 
   addEventListener<K extends keyof EventMap>(type: K, listener: EventHandler<EventMap[K]> | null, options?: boolean | AddEventListenerOptions): void
   addEventListener (type: string, listener: EventHandler<Event>, options?: boolean | AddEventListenerOptions): void {
-    super.addEventListener(type, listener, options)
+    const once = isOnce(options)
+
+    super.addEventListener(type, (evt) => {
+      if (once) {
+        let list = this.#listeners.get(evt.type)
+
+        if (list != null) {
+          list = list.filter(({ callback }) => callback !== listener)
+          this.#listeners.set(evt.type, list)
+        }
+      }
+
+      if (isEventObject<Event>(listener)) {
+        listener.handleEvent(evt)
+      } else {
+        listener(evt)
+      }
+    }, options)
 
     let list = this.#listeners.get(type)
 
@@ -125,7 +150,7 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
 
     list.push({
       callback: listener,
-      once: (options !== true && options !== false && options?.once) ?? false
+      once
     })
   }
 

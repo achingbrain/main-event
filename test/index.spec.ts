@@ -112,4 +112,43 @@ describe('main-event', () => {
 
     expect(target.listenerCount('test')).to.equal(0)
   })
+
+  it('should not remove `once` listener if earlier event propagation was stopped', () => {
+    interface EventTypes {
+      test: CustomEvent<string>
+    }
+    const target = new TypedEventEmitter<EventTypes>()
+    let firstListenerInvoked = false
+    let secondListenerInvoked = false
+
+    expect(target.listenerCount('test')).to.equal(0)
+
+    target.addEventListener('test', (evt) => {
+      firstListenerInvoked = true
+      evt.stopImmediatePropagation()
+    }, {
+      once: true
+    })
+
+    target.addEventListener('test', () => {
+      secondListenerInvoked = true
+    }, {
+      once: true
+    })
+
+    target.dispatchEvent(new CustomEvent('test', {
+      detail: 'hello'
+    }))
+
+    expect(firstListenerInvoked).to.be.true()
+    expect(secondListenerInvoked).to.be.false()
+    expect(target.listenerCount('test')).to.equal(1)
+
+    target.dispatchEvent(new CustomEvent('test', {
+      detail: 'world'
+    }))
+
+    expect(secondListenerInvoked).to.be.true()
+    expect(target.listenerCount('test')).to.equal(0)
+  })
 })

@@ -168,21 +168,6 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
     this.#listeners.set(type, list)
   }
 
-  dispatchEvent (event: Event): boolean {
-    const result = super.dispatchEvent(event)
-
-    let list = this.#listeners.get(event.type)
-
-    if (list == null) {
-      return result
-    }
-
-    list = list.filter(({ once }) => !once)
-    this.#listeners.set(event.type, list)
-
-    return result
-  }
-
   safeDispatchEvent<Detail>(type: keyof EventMap, detail: CustomEventInit<Detail> = {}): boolean {
     return this.dispatchEvent(new CustomEvent<Detail>(type as string, detail))
   }

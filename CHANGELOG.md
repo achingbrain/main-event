@@ -1,3 +1,9 @@
+## [1.0.3](https://github.com/achingbrain/main-event/compare/v1.0.2...v1.0.3) (2026-04-10)
+
+### Bug Fixes
+
+* ensure listener count is accurate after propagation stops ([#3](https://github.com/achingbrain/main-event/issues/3)) ([7a83616](https://github.com/achingbrain/main-event/commit/7a836166c273756c29a779e35923fa3daad64e48)), closes [#1](https://github.com/achingbrain/main-event/issues/1)
+
 ## [1.0.2](https://github.com/achingbrain/main-event/compare/v1.0.1...v1.0.2) (2026-04-10)
 
 ### Bug Fixes

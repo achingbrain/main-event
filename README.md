@@ -96,6 +96,10 @@ Loading this module through a script tag will make its exports available as `Mai
 <script src="https://unpkg.com/main-event/dist/index.min.js"></script>
 ```
 
+# API Docs
+
+- <https://achingbrain.github.io/main-event>
+
 # License
 
 Licensed under either of

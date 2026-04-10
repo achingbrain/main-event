@@ -1,3 +1,9 @@
+## [1.0.4](https://github.com/achingbrain/main-event/compare/v1.0.3...v1.0.4) (2026-04-10)
+
+### Bug Fixes
+
+* update module-sync path ([#4](https://github.com/achingbrain/main-event/issues/4)) ([3dc6742](https://github.com/achingbrain/main-event/commit/3dc674248644d6141c5857acf4dc8a2b8c8b36bc))
+
 ## [1.0.3](https://github.com/achingbrain/main-event/compare/v1.0.2...v1.0.3) (2026-04-10)
 
 ### Bug Fixes

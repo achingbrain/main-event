@@ -141,7 +141,7 @@
     "docs": "aegir docs"
   },
   "devDependencies": {
-    "aegir": "^47.1.2"
+    "aegir": "^48.0.1"
   },
   "browser": {
     "./dist/src/events.js": "./dist/src/events.browser.js"

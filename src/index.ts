@@ -71,6 +71,18 @@ export type EventHandler<EventType> = EventCallback<EventType> | EventObject<Eve
 interface Listener {
   once: boolean
   callback: any
+  /**
+   * The function actually registered with the native EventTarget. `callback` is
+   * never registered directly, so this is what has to be passed to
+   * `super.removeEventListener` for the listener to be detached.
+   */
+  wrapper: EventCallback<Event>
+  /**
+   * The options the wrapper was registered with - the native EventTarget
+   * matches listeners on (type, callback, capture), so removal has to use the
+   * same capture flag that was used to add.
+   */
+  options?: boolean | AddEventListenerOptions
 }
 
 /**
@@ -124,7 +136,10 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
   addEventListener (type: string, listener: EventHandler<Event>, options?: boolean | AddEventListenerOptions): void {
     const once = isOnce(options)
 
-    super.addEventListener(type, (evt) => {
+    // the wrapper - and not `listener` - is what is registered with the native
+    // EventTarget, so a reference to it must be kept in order to be able to
+    // remove it again later
+    const wrapper = (evt: Event): void => {
       if (once) {
         let list = this.#listeners.get(evt.type)
 
@@ -139,7 +154,9 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       } else {
         listener(evt)
       }
-    }, options)
+    }
+
+    super.addEventListener(type, wrapper, options)
 
     let list = this.#listeners.get(type)
 
@@ -150,18 +167,27 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
 
     list.push({
       callback: listener,
-      once
+      once,
+      wrapper,
+      options
     })
   }
 
   removeEventListener<K extends keyof EventMap>(type: K, listener?: EventHandler<EventMap[K]> | null, options?: boolean | EventListenerOptions): void
   removeEventListener (type: string, listener?: EventHandler<Event>, options?: boolean | EventListenerOptions): void {
-    super.removeEventListener(type.toString(), listener ?? null, options)
-
     let list = this.#listeners.get(type)
 
     if (list == null) {
+      super.removeEventListener(type.toString(), listener ?? null, options)
       return
+    }
+
+    for (const entry of list) {
+      if (entry.callback === listener) {
+        // detach the wrapper that was actually registered, using the options it
+        // was registered with so that the capture flag matches
+        super.removeEventListener(type.toString(), entry.wrapper, entry.options)
+      }
     }
 
     list = list.filter(({ callback }) => callback !== listener)

@@ -157,4 +157,133 @@ describe('main-event', () => {
     target.removeEventListener('other')
     expect(target.listenerCount('other')).to.equal(0)
   })
+
+  it('should stop invoking a listener after removal', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+
+    target.removeEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should stop invoking a `once` listener removed before it fires', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener, { once: true })
+    target.removeEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+
+    expect(invocations).to.equal(0)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should stop invoking an object listener after removal', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = {
+      handleEvent: (): void => {
+        invocations++
+      }
+    }
+
+    target.addEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+
+    target.removeEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should detach every registration of a listener added more than once', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener)
+    target.addEventListener('test', listener)
+    expect(target.listenerCount('test')).to.equal(2)
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(2)
+
+    // removal drops both bookkeeping entries, so it must drop both registrations
+    target.removeEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(2)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should leave other listeners attached when one is removed', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let removedInvocations = 0
+    let retainedInvocations = 0
+    const removed = (): void => {
+      removedInvocations++
+    }
+    const retained = (): void => {
+      retainedInvocations++
+    }
+
+    target.addEventListener('test', removed)
+    target.addEventListener('test', retained)
+    target.removeEventListener('test', removed)
+    target.dispatchEvent(new CustomEvent('test'))
+
+    expect(removedInvocations).to.equal(0)
+    expect(retainedInvocations).to.equal(1)
+    expect(target.listenerCount('test')).to.equal(1)
+  })
+
+  it('should detach a listener added with capture', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener, { capture: true })
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+
+    // callers do not generally repeat the add-time options when removing
+    target.removeEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should not accumulate listeners over add/remove cycles', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    const counter = { invocations: 0 }
+
+    for (let i = 0; i < 100; i++) {
+      const listener = (): void => {
+        counter.invocations++
+      }
+      target.addEventListener('test', listener)
+      target.removeEventListener('test', listener)
+    }
+
+    target.dispatchEvent(new CustomEvent('test'))
+
+    expect(counter.invocations).to.equal(0)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
 })

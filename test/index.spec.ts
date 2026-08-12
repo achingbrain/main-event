@@ -262,11 +262,95 @@ describe('main-event', () => {
     target.dispatchEvent(new CustomEvent('test'))
     expect(invocations).to.equal(1)
 
-    // callers do not generally repeat the add-time options when removing
-    target.removeEventListener('test', listener)
+    target.removeEventListener('test', listener, { capture: true })
     target.dispatchEvent(new CustomEvent('test'))
     expect(invocations).to.equal(1)
     expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should detach a listener added with useCapture', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    // the boolean and the options object are two spellings of the same flag, so
+    // either may be used to remove a listener added with the other
+    target.addEventListener('test', listener, true)
+    target.removeEventListener('test', listener, { capture: true })
+
+    target.addEventListener('test', listener, { capture: true })
+    target.removeEventListener('test', listener, true)
+
+    target.dispatchEvent(new CustomEvent('test'))
+
+    expect(invocations).to.equal(0)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should not detach a listener when the capture flag does not match', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener, { capture: true })
+
+    // capture is the only option removeEventListener takes into account, and it
+    // has to match, so none of these remove anything
+    target.removeEventListener('test', listener)
+    target.removeEventListener('test', listener, false)
+    target.removeEventListener('test', listener, { capture: false })
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+    expect(target.listenerCount('test')).to.equal(1)
+
+    target.removeEventListener('test', listener, { capture: true })
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(1)
+    expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should treat capturing and non-capturing registrations as distinct', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener, { capture: true })
+    target.addEventListener('test', listener)
+    expect(target.listenerCount('test')).to.equal(2)
+
+    target.removeEventListener('test', listener, { capture: true })
+    target.dispatchEvent(new CustomEvent('test'))
+
+    expect(invocations).to.equal(1)
+    expect(target.listenerCount('test')).to.equal(1)
+  })
+
+  it('should not detach other registrations when a `once` listener fires', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener, { once: true })
+    target.addEventListener('test', listener)
+    expect(target.listenerCount('test')).to.equal(2)
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(2)
+
+    // the `once` registration is gone, the other one is still attached
+    expect(target.listenerCount('test')).to.equal(1)
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(3)
   })
 
   it('should not accumulate listeners over add/remove cycles', () => {

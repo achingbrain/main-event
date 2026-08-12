@@ -78,11 +78,11 @@ interface Listener {
    */
   wrapper: EventCallback<Event>
   /**
-   * The options the wrapper was registered with - the native EventTarget
-   * matches listeners on (type, callback, capture), so removal has to use the
-   * same capture flag that was used to add.
+   * The normalized capture flag the wrapper was registered with. The native
+   * EventTarget matches listeners on (type, callback, capture), so removal has
+   * to present the same flag that was used to add.
    */
-  options?: boolean | AddEventListenerOptions
+  capture: boolean
 }
 
 /**
@@ -106,6 +106,19 @@ function isEventObject <EventType> (obj?: any): obj is EventObject<EventType> {
 
 function isOnce (options?: boolean | AddEventListenerOptions): boolean {
   return (options !== true && options !== false && options?.once) ?? false
+}
+
+/**
+ * `useCapture` may be passed as a boolean or as the `capture` property of an
+ * options object - normalize both spellings to a boolean so that adds and
+ * removes can be matched against each other.
+ */
+function isCapture (options?: boolean | AddEventListenerOptions | EventListenerOptions): boolean {
+  if (options === true || options === false) {
+    return options
+  }
+
+  return options?.capture ?? false
 }
 
 /**
@@ -135,6 +148,7 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
   addEventListener<K extends keyof EventMap>(type: K, listener: EventHandler<EventMap[K]> | null, options?: boolean | AddEventListenerOptions): void
   addEventListener (type: string, listener: EventHandler<Event>, options?: boolean | AddEventListenerOptions): void {
     const once = isOnce(options)
+    const capture = isCapture(options)
 
     // the wrapper - and not `listener` - is what is registered with the native
     // EventTarget, so a reference to it must be kept in order to be able to
@@ -144,7 +158,10 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
         let list = this.#listeners.get(evt.type)
 
         if (list != null) {
-          list = list.filter(({ callback }) => callback !== listener)
+          // the native EventTarget has already detached this wrapper - drop the
+          // entry for this registration only, any other registration of the
+          // same callback is still attached
+          list = list.filter(entry => entry.wrapper !== wrapper)
           this.#listeners.set(evt.type, list)
         }
       }
@@ -169,29 +186,37 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       callback: listener,
       once,
       wrapper,
-      options
+      capture
     })
   }
 
   removeEventListener<K extends keyof EventMap>(type: K, listener?: EventHandler<EventMap[K]> | null, options?: boolean | EventListenerOptions): void
   removeEventListener (type: string, listener?: EventHandler<Event>, options?: boolean | EventListenerOptions): void {
-    let list = this.#listeners.get(type)
+    const list = this.#listeners.get(type)
 
     if (list == null) {
       super.removeEventListener(type.toString(), listener ?? null, options)
       return
     }
 
-    for (const entry of list) {
-      if (entry.callback === listener) {
-        // detach the wrapper that was actually registered, using the options it
-        // was registered with so that the capture flag matches
-        super.removeEventListener(type.toString(), entry.wrapper, entry.options)
-      }
-    }
+    // as with the native EventTarget, the capture flag has to match for a
+    // listener to be removed, but no other option is taken into account
+    const capture = isCapture(options)
 
-    list = list.filter(({ callback }) => callback !== listener)
-    this.#listeners.set(type, list)
+    this.#listeners.set(type, list.filter(entry => {
+      if (entry.callback !== listener || entry.capture !== capture) {
+        return true
+      }
+
+      // the wrapper - and not `listener` - is what was registered with the
+      // native EventTarget, so it is what has to be detached. Pass the capture
+      // flag as an object and not as a boolean - Node.js' EventTarget ignores
+      // the `useCapture` argument of `removeEventListener` and only reads
+      // `options.capture`
+      super.removeEventListener(type.toString(), entry.wrapper, { capture: entry.capture })
+
+      return false
+    }))
   }
 
   safeDispatchEvent<Detail>(type: keyof EventMap, detail: CustomEventInit<Detail> = {}): boolean {

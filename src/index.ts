@@ -69,22 +69,54 @@ export interface EventObject<EventType> { handleEvent: EventCallback<EventType> 
 export type EventHandler<EventType> = EventCallback<EventType> | EventObject<EventType>
 
 interface Listener {
-  once: boolean
+  /**
+   * The original listener
+   */
   callback: any
+
+  /**
+   * The function actually registered with the native EventTarget. `callback` is
+   * never registered directly, so this is what has to be passed to
+   * `super.removeEventListener` for the listener to be detached.
+   */
+  wrapper: EventCallback<Event>
+
+  /**
+   * Event listener options normalized according to https://dom.spec.whatwg.org/#event-flatten-more
+   */
+  options: AddEventListenerOptions
+
+  /**
+   * Callback function added to any passed signal
+   */
+  onAbort(): void
 }
 
 /**
- *
+ * An event target with a typed map of supported events
  */
 export interface TypedEventTarget <EventMap extends Record<string, any>> extends EventTarget {
+  /**
+   * Add a listener for an event
+   */
   addEventListener<K extends keyof EventMap>(type: K, listener: EventHandler<EventMap[K]> | null, options?: boolean | AddEventListenerOptions): void
 
+  /**
+   * Returns the number of listeners for the event type
+   */
   listenerCount (type: string): number
 
+  /**
+   * Remove a listener previously registered for an event
+   */
   removeEventListener<K extends keyof EventMap>(type: K, listener?: EventHandler<EventMap[K]> | null, options?: boolean | EventListenerOptions): void
-
   removeEventListener (type: string, listener?: EventHandler<Event>, options?: boolean | EventListenerOptions): void
 
+  /**
+   * Type-safe version of `EventTarget.dispatchEvent` - only events from the event map are supported.
+   *
+   * Attempting to dispatch an unsupported event results in a TypeScript compilation error.
+   */
   safeDispatchEvent<Detail>(type: keyof EventMap, detail?: CustomEventInit<Detail>): boolean
 }
 
@@ -92,8 +124,49 @@ function isEventObject <EventType> (obj?: any): obj is EventObject<EventType> {
   return typeof obj?.handleEvent === 'function'
 }
 
-function isOnce (options?: boolean | AddEventListenerOptions): boolean {
-  return (options !== true && options !== false && options?.once) ?? false
+/**
+ * Returns true if the passed argument is a boolean value
+ */
+function isBoolean (obj?: any): obj is boolean {
+  return obj === true || obj === false
+}
+
+/**
+ * @see https://dom.spec.whatwg.org/#concept-flatten-options
+ */
+function flattenOptions (options?: any): boolean {
+  if (isBoolean(options)) {
+    return options
+  }
+
+  return options?.capture ?? false
+}
+
+/**
+ * @see https://dom.spec.whatwg.org/#event-flatten-more
+ */
+function flattenMoreOptions (options?: any): AddEventListenerOptions {
+  const opts: AddEventListenerOptions = {
+    capture: flattenOptions(options),
+    once: Boolean(options?.once)
+  }
+
+  if (options?.passive != null) {
+    opts.passive = options?.passive
+  }
+
+  if (options?.signal != null) {
+    opts.signal = options?.signal
+  }
+
+  return opts
+}
+
+/**
+ * Returns true if the capture/useCapture arg of each opts are equal
+ */
+function captureIsEqual (optsA?: boolean | AddEventListenerOptions, optsB?: boolean | EventListenerOptions): boolean {
+  return flattenMoreOptions(optsA).capture === flattenMoreOptions(optsB).capture
 }
 
 /**
@@ -121,17 +194,19 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
   }
 
   addEventListener<K extends keyof EventMap>(type: K, listener: EventHandler<EventMap[K]> | null, options?: boolean | AddEventListenerOptions): void
-  addEventListener (type: string, listener: EventHandler<Event>, options?: boolean | AddEventListenerOptions): void {
-    const once = isOnce(options)
+  addEventListener (type: string, listener: EventHandler<Event>, opts?: boolean | AddEventListenerOptions): void {
+    const options = flattenMoreOptions(opts)
 
-    super.addEventListener(type, (evt) => {
-      if (once) {
-        let list = this.#listeners.get(evt.type)
+    if (options?.signal?.aborted === true) {
+      return
+    }
 
-        if (list != null) {
-          list = list.filter(({ callback }) => callback !== listener)
-          this.#listeners.set(evt.type, list)
-        }
+    // the wrapper - and not `listener` - is what is registered with the native
+    // EventTarget, so a reference to it must be kept in order to be able to
+    // remove it again later
+    const wrapper = (evt: Event): void => {
+      if (options.once) {
+        this.removeEventListener(type, listener, options)
       }
 
       if (isEventObject<Event>(listener)) {
@@ -139,7 +214,7 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       } else {
         listener(evt)
       }
-    }, options)
+    }
 
     let list = this.#listeners.get(type)
 
@@ -148,24 +223,59 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       this.#listeners.set(type, list)
     }
 
+    // if there is already an entry in the list for the same type, callback and
+    // capture value, listening again is a no-op
+    // @see https://dom.spec.whatwg.org/#add-an-event-listener
+    const alreadyListening = list.some(entry => {
+      if (entry.callback !== listener) {
+        return false
+      }
+
+      // listener is already present, check capture options
+      return captureIsEqual(entry.options, options)
+    })
+
+    if (alreadyListening) {
+      return
+    }
+
+    super.addEventListener(type, wrapper, options)
+
+    const onAbort = (): void => {
+      this.removeEventListener(type, listener, options)
+    }
+    options.signal?.addEventListener('abort', onAbort)
+
     list.push({
       callback: listener,
-      once
+      wrapper,
+      options,
+      onAbort
     })
   }
 
   removeEventListener<K extends keyof EventMap>(type: K, listener?: EventHandler<EventMap[K]> | null, options?: boolean | EventListenerOptions): void
   removeEventListener (type: string, listener?: EventHandler<Event>, options?: boolean | EventListenerOptions): void {
-    super.removeEventListener(type.toString(), listener ?? null, options)
-
-    let list = this.#listeners.get(type)
+    const list = this.#listeners.get(type)
 
     if (list == null) {
+      super.removeEventListener(type, listener ?? null, options)
       return
     }
 
-    list = list.filter(({ callback }) => callback !== listener)
-    this.#listeners.set(type, list)
+    this.#listeners.set(type, list.filter(entry => {
+      // listeners are the same so we need to check the capture argument
+      if (entry.callback === listener && captureIsEqual(entry.options, options)) {
+        super.removeEventListener(type, entry.wrapper, options)
+
+        // remove abort signal abort event listener if set
+        entry.options?.signal?.removeEventListener('abort', entry.onAbort)
+
+        return false
+      }
+
+      return true
+    }))
   }
 
   safeDispatchEvent<Detail>(type: keyof EventMap, detail: CustomEventInit<Detail> = {}): boolean {

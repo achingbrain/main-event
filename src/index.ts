@@ -235,11 +235,11 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
   }
 
   removeEventListener<K extends keyof EventMap>(type: K, listener?: EventHandler<EventMap[K]> | null, options?: boolean | EventListenerOptions): void
-  removeEventListener (type: string, listener?: EventHandler<Event>, opts?: boolean | EventListenerOptions): void {
+  removeEventListener (type: string, listener?: EventHandler<Event>, options?: boolean | EventListenerOptions): void {
     const list = this.#listeners.get(type)
 
     if (list == null) {
-      super.removeEventListener(type, listener ?? null, opts)
+      super.removeEventListener(type, listener ?? null, options)
       return
     }
 
@@ -249,11 +249,11 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       }
 
       // listeners are the same so we need to check the capture argument
-      if (!this.#captureIsEqual(entry.options, opts)) {
+      if (!this.#captureIsEqual(entry.options, options)) {
         return true
       }
 
-      super.removeEventListener(type, entry.wrapper, opts)
+      super.removeEventListener(type, entry.wrapper, options)
 
       // remove abort signal abort event listener if set
       entry.options?.signal?.removeEventListener('abort', entry.onAbort)

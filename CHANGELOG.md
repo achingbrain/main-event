@@ -1,3 +1,13 @@
+## [1.0.5](https://github.com/achingbrain/main-event/compare/v1.0.4...v1.0.5) (2026-08-13)
+
+### Bug Fixes
+
+* remove the listener that was actually registered ([#14](https://github.com/achingbrain/main-event/issues/14)) ([1af95b9](https://github.com/achingbrain/main-event/commit/1af95b907261d081cf976c83d9fe846901d5240d)), closes [#13](https://github.com/achingbrain/main-event/issues/13)
+
+### Trivial Changes
+
+* bump aegir from 47.2.0 to 48.1.2 ([#12](https://github.com/achingbrain/main-event/issues/12)) ([5d1c0e3](https://github.com/achingbrain/main-event/commit/5d1c0e3b3d96fc6df1a2b0178e30b5c469d946cb))
+
 ## [1.0.4](https://github.com/achingbrain/main-event/compare/v1.0.3...v1.0.4) (2026-04-10)
 
 ### Bug Fixes

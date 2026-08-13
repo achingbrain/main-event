@@ -521,4 +521,21 @@ describe('main-event', () => {
     target.dispatchEvent(new CustomEvent('test'))
     expect(invocations).to.equal(0)
   })
+
+  it('should ignore a listener attached with an aborted signal', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    const controller = new AbortController()
+    controller.abort()
+
+    target.addEventListener('test', listener, { signal: controller.signal })
+    expect(target.listenerCount('test')).to.equal(0)
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(0)
+  })
 })

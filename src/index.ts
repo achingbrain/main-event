@@ -82,7 +82,7 @@ interface Listener {
   wrapper: EventCallback<Event>
 
   /**
-   * Event listener options normalized according to https://dom.spec.whatwg.org/#interface-eventtarget
+   * Event listener options normalized according to https://dom.spec.whatwg.org/#event-flatten-more
    */
   options: AddEventListenerOptions
 

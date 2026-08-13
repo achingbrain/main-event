@@ -93,17 +93,30 @@ interface Listener {
 }
 
 /**
- *
+ * An event target with a typed map of supported events
  */
 export interface TypedEventTarget <EventMap extends Record<string, any>> extends EventTarget {
+  /**
+   * Add a listener for an event
+   */
   addEventListener<K extends keyof EventMap>(type: K, listener: EventHandler<EventMap[K]> | null, options?: boolean | AddEventListenerOptions): void
 
+  /**
+   * Returns the number of listeners for the event type
+   */
   listenerCount (type: string): number
 
+  /**
+   * Remove a listener previously registered for an event
+   */
   removeEventListener<K extends keyof EventMap>(type: K, listener?: EventHandler<EventMap[K]> | null, options?: boolean | EventListenerOptions): void
-
   removeEventListener (type: string, listener?: EventHandler<Event>, options?: boolean | EventListenerOptions): void
 
+  /**
+   * Type-safe version of `EventTarget.dispatchEvent` - only events from the event map are supported.
+   *
+   * Attempting to dispatch an unsupported event results in a TypeScript compilation error.
+   */
   safeDispatchEvent<Detail>(type: keyof EventMap, detail?: CustomEventInit<Detail>): boolean
 }
 

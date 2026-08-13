@@ -150,6 +150,13 @@ function flattenMoreOptions (options?: any): AddEventListenerOptions {
 }
 
 /**
+ * Returns true if the capture/useCapture arg of each opts are equal
+ */
+function captureIsEqual (optsA?: boolean | AddEventListenerOptions, optsB?: boolean | EventListenerOptions): boolean {
+  return flattenMoreOptions(optsA).capture === flattenMoreOptions(optsB).capture
+}
+
+/**
  * An implementation of a typed event target
  */
 export class TypedEventEmitter<EventMap extends Record<string, any>> extends EventTarget implements TypedEventTarget<EventMap> {
@@ -212,7 +219,7 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       }
 
       // listener is already present, check capture options
-      return this.#captureIsEqual(entry.options, options)
+      return captureIsEqual(entry.options, options)
     })
 
     if (alreadyListening) {
@@ -244,30 +251,22 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
     }
 
     this.#listeners.set(type, list.filter(entry => {
-      if (entry.callback !== listener) {
-        return true
-      }
-
       // listeners are the same so we need to check the capture argument
-      if (!this.#captureIsEqual(entry.options, options)) {
-        return true
+      if (entry.callback === listener && captureIsEqual(entry.options, options)) {
+        super.removeEventListener(type, entry.wrapper, options)
+
+        // remove abort signal abort event listener if set
+        entry.options?.signal?.removeEventListener('abort', entry.onAbort)
+
+        return false
       }
 
-      super.removeEventListener(type, entry.wrapper, options)
-
-      // remove abort signal abort event listener if set
-      entry.options?.signal?.removeEventListener('abort', entry.onAbort)
-
-      return false
+      return true
     }))
   }
 
   safeDispatchEvent<Detail>(type: keyof EventMap, detail: CustomEventInit<Detail> = {}): boolean {
     return this.dispatchEvent(new CustomEvent<Detail>(type as string, detail))
-  }
-
-  #captureIsEqual (optsA?: boolean | AddEventListenerOptions, optsB?: boolean | EventListenerOptions): boolean {
-    return flattenMoreOptions(optsA).capture === flattenMoreOptions(optsB).capture
   }
 }
 

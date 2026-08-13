@@ -69,20 +69,27 @@ export interface EventObject<EventType> { handleEvent: EventCallback<EventType> 
 export type EventHandler<EventType> = EventCallback<EventType> | EventObject<EventType>
 
 interface Listener {
-  once: boolean
+  /**
+   * The original listener
+   */
   callback: any
+
   /**
    * The function actually registered with the native EventTarget. `callback` is
    * never registered directly, so this is what has to be passed to
    * `super.removeEventListener` for the listener to be detached.
    */
   wrapper: EventCallback<Event>
+
   /**
-   * The normalized capture flag the wrapper was registered with. The native
-   * EventTarget matches listeners on (type, callback, capture), so removal has
-   * to present the same flag that was used to add.
+   * Event listener options normalized according to https://dom.spec.whatwg.org/#interface-eventtarget
    */
-  capture: boolean
+  options: AddEventListenerOptions
+
+  /**
+   * Callback function added to any passed signal
+   */
+  onAbort(): void
 }
 
 /**
@@ -104,21 +111,42 @@ function isEventObject <EventType> (obj?: any): obj is EventObject<EventType> {
   return typeof obj?.handleEvent === 'function'
 }
 
-function isOnce (options?: boolean | AddEventListenerOptions): boolean {
-  return (options !== true && options !== false && options?.once) ?? false
+/**
+ * Returns true if the passed argument is a boolean value
+ */
+function isBoolean (obj?: any): obj is boolean {
+  return obj === true || obj === false
 }
 
 /**
- * `useCapture` may be passed as a boolean or as the `capture` property of an
- * options object - normalize both spellings to a boolean so that adds and
- * removes can be matched against each other.
+ * @see https://dom.spec.whatwg.org/#concept-flatten-options
  */
-function isCapture (options?: boolean | AddEventListenerOptions | EventListenerOptions): boolean {
-  if (options === true || options === false) {
+function flattenOptions (options?: any): boolean {
+  if (isBoolean(options)) {
     return options
   }
 
   return options?.capture ?? false
+}
+
+/**
+ * @see https://dom.spec.whatwg.org/#event-flatten-more
+ */
+function flattenMoreOptions (options?: any): AddEventListenerOptions {
+  const opts: AddEventListenerOptions = {
+    capture: flattenOptions(options),
+    once: Boolean(options?.once)
+  }
+
+  if (options?.passive != null) {
+    opts.passive = options?.passive
+  }
+
+  if (options?.signal != null) {
+    opts.signal = options?.signal
+  }
+
+  return opts
 }
 
 /**
@@ -146,24 +174,19 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
   }
 
   addEventListener<K extends keyof EventMap>(type: K, listener: EventHandler<EventMap[K]> | null, options?: boolean | AddEventListenerOptions): void
-  addEventListener (type: string, listener: EventHandler<Event>, options?: boolean | AddEventListenerOptions): void {
-    const once = isOnce(options)
-    const capture = isCapture(options)
+  addEventListener (type: string, listener: EventHandler<Event>, opts?: boolean | AddEventListenerOptions): void {
+    const options = flattenMoreOptions(opts)
+
+    if (options?.signal?.aborted === true) {
+      return
+    }
 
     // the wrapper - and not `listener` - is what is registered with the native
     // EventTarget, so a reference to it must be kept in order to be able to
     // remove it again later
     const wrapper = (evt: Event): void => {
-      if (once) {
-        let list = this.#listeners.get(evt.type)
-
-        if (list != null) {
-          // the native EventTarget has already detached this wrapper - drop the
-          // entry for this registration only, any other registration of the
-          // same callback is still attached
-          list = list.filter(entry => entry.wrapper !== wrapper)
-          this.#listeners.set(evt.type, list)
-        }
+      if (options.once) {
+        this.removeEventListener(type, listener, options)
       }
 
       if (isEventObject<Event>(listener)) {
@@ -173,8 +196,6 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       }
     }
 
-    super.addEventListener(type, wrapper, options)
-
     let list = this.#listeners.get(type)
 
     if (list == null) {
@@ -182,38 +203,60 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       this.#listeners.set(type, list)
     }
 
+    // if there is already an entry in the list for the same type, callback and
+    // capture value, listening again is a no-op
+    // @see https://dom.spec.whatwg.org/#add-an-event-listener
+    const alreadyListening = list.some(entry => {
+      if (entry.callback !== listener) {
+        return false
+      }
+
+      // listener is already present, check capture options
+      return this.#captureIsEqual(entry.options, options)
+    })
+
+    if (alreadyListening) {
+      return
+    }
+
+    super.addEventListener(type, wrapper, options)
+
+    const onAbort = (): void => {
+      this.removeEventListener(type, listener, options)
+    }
+    options.signal?.addEventListener('abort', onAbort)
+
     list.push({
       callback: listener,
-      once,
       wrapper,
-      capture
+      options,
+      onAbort
     })
   }
 
   removeEventListener<K extends keyof EventMap>(type: K, listener?: EventHandler<EventMap[K]> | null, options?: boolean | EventListenerOptions): void
-  removeEventListener (type: string, listener?: EventHandler<Event>, options?: boolean | EventListenerOptions): void {
+  removeEventListener (type: string, listener?: EventHandler<Event>, opts?: boolean | EventListenerOptions): void {
     const list = this.#listeners.get(type)
 
     if (list == null) {
-      super.removeEventListener(type.toString(), listener ?? null, options)
+      super.removeEventListener(type, listener ?? null, opts)
       return
     }
 
-    // as with the native EventTarget, the capture flag has to match for a
-    // listener to be removed, but no other option is taken into account
-    const capture = isCapture(options)
-
     this.#listeners.set(type, list.filter(entry => {
-      if (entry.callback !== listener || entry.capture !== capture) {
+      if (entry.callback !== listener) {
         return true
       }
 
-      // the wrapper - and not `listener` - is what was registered with the
-      // native EventTarget, so it is what has to be detached. Pass the capture
-      // flag as an object and not as a boolean - Node.js' EventTarget ignores
-      // the `useCapture` argument of `removeEventListener` and only reads
-      // `options.capture`
-      super.removeEventListener(type.toString(), entry.wrapper, { capture: entry.capture })
+      // listeners are the same so we need to check the capture argument
+      if (!this.#captureIsEqual(entry.options, opts)) {
+        return true
+      }
+
+      super.removeEventListener(type, entry.wrapper, opts)
+
+      // remove abort signal abort event listener if set
+      entry.options?.signal?.removeEventListener('abort', entry.onAbort)
 
       return false
     }))
@@ -221,6 +264,10 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
 
   safeDispatchEvent<Detail>(type: keyof EventMap, detail: CustomEventInit<Detail> = {}): boolean {
     return this.dispatchEvent(new CustomEvent<Detail>(type as string, detail))
+  }
+
+  #captureIsEqual (optsA?: boolean | AddEventListenerOptions, optsB?: boolean | EventListenerOptions): boolean {
+    return flattenMoreOptions(optsA).capture === flattenMoreOptions(optsB).capture
   }
 }
 

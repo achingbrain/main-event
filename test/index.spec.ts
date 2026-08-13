@@ -1,11 +1,128 @@
 /* eslint-env mocha */
 
 import { expect } from 'aegir/chai'
+import { isNode } from 'wherearewe'
 import { TypedEventEmitter } from '../src/index.ts'
 
 interface EventTypes {
   test: CustomEvent<string>
   other: CustomEvent<string>
+}
+
+interface AddRemoveTestOptions {
+  addA?: AddEventListenerOptions | boolean,
+  addB?: AddEventListenerOptions | boolean,
+  remove?: EventListenerOptions | boolean
+}
+
+function supportsListenerCount (obj: any): obj is EventTarget & Pick<TypedEventEmitter<any>, 'listenerCount'> {
+  return typeof obj.listenerCount === 'function'
+}
+
+const addRemoveTests: Array<{ name: string, options: AddRemoveTestOptions }> = [{
+  name: 'should remove all listeners with default args',
+  options: {}
+}]
+
+const useCaptureVariations = [
+  undefined,
+  true,
+  false, {
+    capture: undefined
+  }, {
+    capture: true
+  }, {
+    capture: false
+  }
+]
+
+function printCapture (arg?: any): string {
+  if (arg === true || arg === false) {
+    return arg
+  }
+
+  if (Object.keys(arg ?? {}).includes('capture')) {
+    return `{ capture: ${arg.capture} }`
+  }
+
+  return 'undefined'
+}
+
+// add all useCapture variations
+for (let i = 0; i < useCaptureVariations.length; i++) {
+  for (let j = 0; j < useCaptureVariations.length; j++) {
+    for (let k = 0; k < useCaptureVariations.length; k++) {
+      const addA = useCaptureVariations[i]
+      const addB = useCaptureVariations[j]
+      const remove = useCaptureVariations[k]
+
+      addRemoveTests.push({
+        name: `should add and remove listener with [${printCapture(addA)}, ${printCapture(addB)}] and remove ${printCapture(remove)}`,
+        options: {
+          addA,
+          addB,
+          remove
+        }
+      })
+    }
+  }
+}
+
+function isBoolean (obj?: any): obj is boolean {
+  return obj === true || obj === false
+}
+
+function findCapture (opts?: any): boolean {
+  if (isBoolean(opts)) {
+    return opts
+  }
+
+  return opts?.capture ?? false
+}
+
+function createAddRemoveTest (name: string, createEmitter: () => EventTarget, options: AddRemoveTestOptions): void {
+  it(name, function () {
+    if (isNode && (isBoolean(options.addA) || isBoolean(options.addB) || isBoolean(options.remove))) {
+      // remove after fix for https://github.com/nodejs/node/issues/65244 ships
+      this.skip()
+    }
+
+    const removedAll = findCapture(options.addA) === findCapture(options.addB) && findCapture(options.addB) === findCapture(options.remove)
+    const target = createEmitter()
+
+    let invocations = 0
+    const listener: EventListener = (): void => {
+      invocations++
+    }
+
+    let expectedInvocations = 1
+
+    if (removedAll) {
+      expectedInvocations = 0
+    }
+
+    let expectedListeners = 2
+
+    if (findCapture(options.addA) === findCapture(options.addB)) {
+      expectedListeners = 1
+    }
+
+    target.addEventListener('test', listener, options.addA)
+    target.addEventListener('test', listener, options.addB)
+
+    if (supportsListenerCount(target)) {
+      expect(target.listenerCount('test')).to.equal(expectedListeners, 'reported incorrect number of listeners before removal')
+    }
+
+    target.removeEventListener('test', listener, options.remove)
+    target.dispatchEvent(new CustomEvent('test'))
+
+    expect(invocations).to.equal(expectedInvocations, 'incorrect number of invocations recorded')
+
+    if (supportsListenerCount(target)) {
+      expect(target.listenerCount('test')).to.equal(expectedInvocations, 'reported incorrect number of listeners after removal')
+    }
+  })
 }
 
 describe('main-event', () => {
@@ -209,25 +326,16 @@ describe('main-event', () => {
     expect(target.listenerCount('test')).to.equal(0)
   })
 
-  it('should detach every registration of a listener added more than once', () => {
-    const target = new TypedEventEmitter<EventTypes>()
-    let invocations = 0
-    const listener = (): void => {
-      invocations++
-    }
+  describe('add/remove event listener compatibility (EventTarget)', () => {
+    addRemoveTests.forEach(test => {
+      createAddRemoveTest(test.name, () => new EventTarget(), test.options)
+    })
+  })
 
-    target.addEventListener('test', listener)
-    target.addEventListener('test', listener)
-    expect(target.listenerCount('test')).to.equal(2)
-
-    target.dispatchEvent(new CustomEvent('test'))
-    expect(invocations).to.equal(2)
-
-    // removal drops both bookkeeping entries, so it must drop both registrations
-    target.removeEventListener('test', listener)
-    target.dispatchEvent(new CustomEvent('test'))
-    expect(invocations).to.equal(2)
-    expect(target.listenerCount('test')).to.equal(0)
+  describe('add/remove event listener compatibility (TypedEventEmitter)', () => {
+    addRemoveTests.forEach(test => {
+      createAddRemoveTest(test.name, () => new TypedEventEmitter(), test.options)
+    })
   })
 
   it('should leave other listeners attached when one is removed', () => {
@@ -268,7 +376,12 @@ describe('main-event', () => {
     expect(target.listenerCount('test')).to.equal(0)
   })
 
-  it('should detach a listener added with useCapture', () => {
+  it('should detach a listener added with useCapture', function () {
+    if (isNode) {
+      // remove after fix for https://github.com/nodejs/node/issues/65244 ships
+      this.skip()
+    }
+
     const target = new TypedEventEmitter<EventTypes>()
     let invocations = 0
     const listener = (): void => {
@@ -332,6 +445,24 @@ describe('main-event', () => {
     expect(target.listenerCount('test')).to.equal(1)
   })
 
+  it('should treat capturing and default-capturing registrations as distinct', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    target.addEventListener('test', listener, { capture: true })
+    target.addEventListener('test', listener)
+    expect(target.listenerCount('test')).to.equal(2, 'did not report correct number of listeners before invocation')
+
+    target.removeEventListener('test', listener)
+    target.dispatchEvent(new CustomEvent('test'))
+
+    expect(invocations).to.equal(1, 'did not report correct number of invocations')
+    expect(target.listenerCount('test')).to.equal(1, 'did not report correct number of listeners after invocation')
+  })
+
   it('should not detach other registrations when a `once` listener fires', () => {
     const target = new TypedEventEmitter<EventTypes>()
     let invocations = 0
@@ -340,7 +471,7 @@ describe('main-event', () => {
     }
 
     target.addEventListener('test', listener, { once: true })
-    target.addEventListener('test', listener)
+    target.addEventListener('test', listener, true)
     expect(target.listenerCount('test')).to.equal(2)
 
     target.dispatchEvent(new CustomEvent('test'))
@@ -369,5 +500,25 @@ describe('main-event', () => {
 
     expect(counter.invocations).to.equal(0)
     expect(target.listenerCount('test')).to.equal(0)
+  })
+
+  it('should detach a listener via a signal', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let invocations = 0
+    const listener = (): void => {
+      invocations++
+    }
+
+    const controller = new AbortController()
+
+    target.addEventListener('test', listener, { signal: controller.signal })
+    expect(target.listenerCount('test')).to.equal(1)
+
+    controller.abort()
+
+    expect(target.listenerCount('test')).to.equal(0)
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(invocations).to.equal(0)
   })
 })

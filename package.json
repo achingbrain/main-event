@@ -135,13 +135,18 @@
     "test:chrome-webworker": "aegir test -t webworker",
     "test:firefox": "aegir test -t browser -- --browser firefox",
     "test:firefox-webworker": "aegir test -t webworker -- --browser firefox",
+    "test:safari": "aegir test -t browser -- --browser webkit",
+    "test:safari-webworker": "aegir test -t webworker -- --browser webkit",
     "test:node": "aegir test -t node --cov",
+    "test:deno": "aegir test -t deno --cov",
+    "test:bun": "aegir test -t bun --cov",
     "test:electron-main": "aegir test -t electron-main",
     "release": "aegir release",
     "docs": "aegir docs"
   },
   "devDependencies": {
-    "aegir": "^47.1.2"
+    "aegir": "^48.1.2",
+    "wherearewe": "^2.0.1"
   },
   "browser": {
     "./dist/src/events.js": "./dist/src/events.browser.js"

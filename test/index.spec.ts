@@ -1,7 +1,7 @@
 /* eslint-env mocha */
 
 import { expect } from 'aegir/chai'
-import { isNode } from 'wherearewe'
+import { isElectron, isNode } from 'wherearewe'
 import { TypedEventEmitter } from '../src/index.ts'
 
 interface EventTypes {
@@ -82,7 +82,7 @@ function findCapture (opts?: any): boolean {
 
 function createAddRemoveTest (name: string, createEmitter: () => EventTarget, options: AddRemoveTestOptions): void {
   it(name, function () {
-    if (isNode && (isBoolean(options.addA) || isBoolean(options.addB) || isBoolean(options.remove))) {
+    if ((isNode || isElectron) && (isBoolean(options.addA) || isBoolean(options.addB) || isBoolean(options.remove))) {
       // remove after fix for https://github.com/nodejs/node/issues/65244 ships
       this.skip()
     }
@@ -377,7 +377,7 @@ describe('main-event', () => {
   })
 
   it('should detach a listener added with useCapture', function () {
-    if (isNode) {
+    if ((isNode || isElectron)) {
       // remove after fix for https://github.com/nodejs/node/issues/65244 ships
       this.skip()
     }

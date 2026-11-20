@@ -538,4 +538,31 @@ describe('main-event', () => {
     target.dispatchEvent(new CustomEvent('test'))
     expect(invocations).to.equal(0)
   })
+
+  it('should invoke a function listener with the target as `this`', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let self: unknown
+
+    target.addEventListener('test', function (this: unknown) {
+      self = this
+    })
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(self).to.equal(target)
+  })
+
+  it('should invoke an object listener with the object as `this`', () => {
+    const target = new TypedEventEmitter<EventTypes>()
+    let self: unknown
+    const listener = {
+      handleEvent (): void {
+        self = this
+      }
+    }
+
+    target.addEventListener('test', listener)
+
+    target.dispatchEvent(new CustomEvent('test'))
+    expect(self).to.equal(listener)
+  })
 })

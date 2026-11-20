@@ -212,7 +212,10 @@ export class TypedEventEmitter<EventMap extends Record<string, any>> extends Eve
       if (isEventObject<Event>(listener)) {
         listener.handleEvent(evt)
       } else {
-        listener(evt)
+        // like the native EventTarget, call the listener with the target as
+        // `this`
+        // @see https://dom.spec.whatwg.org/#concept-event-listener-inner-invoke
+        listener.call(this, evt)
       }
     }
 
